@@ -23,6 +23,7 @@ var countInEnabled = true;
 var metronomeEnabled = false;
 var isPlaying = false;
 var PREF_COUNT_IN;
+var PREF_COUNT_BEATS;
 
 var COUNT_BEATS = 8.0;
 
@@ -31,7 +32,7 @@ function init() {
     masterTrack = host.createMasterTrack(0);
 
     var state = host.getDocumentState();
-    PREF_COUNT_IN = state.getEnumSetting("Count-in (8 beats)", "Playback", ["ON", "OFF"], "OFF");
+    PREF_COUNT_IN = state.getEnumSetting("Count-in", "Playback", ["ON", "OFF"], "OFF");
     PREF_COUNT_IN.markInterested();
     PREF_COUNT_IN.addValueObserver(function(value) {
         countInEnabled = (value === "ON");
@@ -40,6 +41,12 @@ function init() {
         } else if (!countInEnabled && metronomeEnabled) {
             transport.isMetronomeEnabled().set(false);
         }
+    });
+
+    PREF_COUNT_BEATS = state.getNumberSetting("Count-in Beats", "Playback", 1, 16, 1, "beats", 8);
+    PREF_COUNT_BEATS.markInterested();
+    PREF_COUNT_BEATS.addValueObserver(function(value) {
+        COUNT_BEATS = Math.round(value);
     });
 
     transport.isMetronomeEnabled().markInterested();
@@ -120,7 +127,7 @@ function updateFade(position) {
         masterTrack.volume().set(targetVolume);
         isCounting = false;
         isFading = false;
-        host.println("8-count complete at beat " + position.toFixed(3));
+        host.println(COUNT_BEATS + "-count complete at beat " + position.toFixed(3));
         return;
     }
 
