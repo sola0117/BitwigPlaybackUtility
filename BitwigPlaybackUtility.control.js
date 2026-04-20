@@ -25,6 +25,8 @@ var isPlaying = false;
 var PREF_COUNT_IN;
 var PREF_COUNT_BEATS;
 var lastShiftedTarget = -1;
+var intendedStartPosition = -1;
+var isRestoringPosition = false;
 
 var COUNT_BEATS = 8.0;
 
@@ -53,6 +55,9 @@ function init() {
     transport.isMetronomeEnabled().markInterested();
     transport.isMetronomeEnabled().addValueObserver(function(en) {
         metronomeEnabled = en;
+        if (!en && !isPlaying && countInEnabled) {
+            PREF_COUNT_IN.set("OFF");
+        }
     });
 
     // Remember the user's master volume when not fading
@@ -68,8 +73,16 @@ function init() {
 
         // 停止中: ユーザーが位置をセットした瞬間にカウント分手前にオフセット
         if (!isPlaying && countInEnabled && !isCounting && !isFading) {
+            if (isRestoringPosition) {
+                // 復元先に到達したら抑制解除
+                if (Math.abs(position - intendedStartPosition) <= 0.1) {
+                    isRestoringPosition = false;
+                }
+                return;
+            }
             var shiftedPos = position - COUNT_BEATS;
             if (shiftedPos >= 0 && Math.abs(position - lastShiftedTarget) > 0.1) {
+                intendedStartPosition = shiftedPos;
                 lastShiftedTarget = shiftedPos;
                 transport.setPosition(shiftedPos);
                 return;
@@ -101,6 +114,12 @@ function init() {
                 isFading = false;
                 waitingForFirstPosition = false;
                 masterTrack.volume().set(targetVolume);
+            }
+            if (initStateSeen && countInEnabled && intendedStartPosition >= 0) {
+                // 再生開始位置（オフセット済み）に戻す。復元中はオフセット抑制
+                isRestoringPosition = true;
+                lastShiftedTarget = intendedStartPosition;
+                transport.setPosition(intendedStartPosition);
             }
             initStateSeen = true;
             return;
