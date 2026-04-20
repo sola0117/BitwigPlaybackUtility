@@ -1,4 +1,4 @@
-loadAPI(18);
+loadAPI(19);
 
 host.defineController(
     "Custom",
@@ -29,6 +29,7 @@ function init() {
 
     var state = host.getDocumentState();
     var countInSetting = state.getBooleanSetting("Count-in (8 beats)", "Playback", true);
+    countInSetting.markInterested();
     countInSetting.addValueObserver(function(value) {
         countInEnabled = value;
     });
