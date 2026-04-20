@@ -20,6 +20,7 @@ var startBeatPosition = 0.0;
 var waitingForFirstPosition = false;
 var initStateSeen = false; // true after the first isPlaying observer fire
 var countInEnabled = true;
+var PREF_COUNT_IN;
 
 var COUNT_BEATS = 8.0;
 
@@ -28,10 +29,10 @@ function init() {
     masterTrack = host.createMasterTrack(0);
 
     var state = host.getDocumentState();
-    var countInSetting = state.getBooleanSetting("Count-in (8 beats)", "Playback", true);
-    countInSetting.markInterested();
-    countInSetting.addValueObserver(function(value) {
-        countInEnabled = value;
+    PREF_COUNT_IN = state.getEnumSetting("Count-in (8 beats)", "Playback", ["ON", "OFF"], "ON");
+    PREF_COUNT_IN.markInterested();
+    PREF_COUNT_IN.addValueObserver(function(value) {
+        countInEnabled = (value === "ON");
     });
 
     // Remember the user's master volume when not fading
