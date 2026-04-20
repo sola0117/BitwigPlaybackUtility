@@ -53,6 +53,9 @@ function init() {
     transport.isMetronomeEnabled().markInterested();
     transport.isMetronomeEnabled().addValueObserver(function(en) {
         metronomeEnabled = en;
+        if (!en && !isPlaying && countInEnabled) {
+            PREF_COUNT_IN.set("OFF");
+        }
     });
 
     // Remember the user's master volume when not fading
