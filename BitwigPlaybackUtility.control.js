@@ -16,7 +16,7 @@ var isFading = false;
 var currentPosition = 0.0;
 var startBeatPosition = 0.0;
 var waitingForFirstPosition = false;
-var isInitialized = false;
+var initStateSeen = false; // true after the first isPlaying observer fire
 
 var COUNT_BEATS = 8.0;
 
@@ -49,19 +49,28 @@ function init() {
     });
 
     transport.isPlaying().addValueObserver(function(isPlaying) {
-        if (!isInitialized) return;
-        if (isPlaying) {
-            startCountIn();
-        } else {
-            onTransportStopped();
+        if (!isPlaying) {
+            // Always keep metronome ON while stopped — fires immediately on init too
+            transport.isMetronomeEnabled().set(true);
+            if (initStateSeen && (isCounting || isFading)) {
+                // Aborted mid count-in: restore master immediately
+                isCounting = false;
+                isFading = false;
+                waitingForFirstPosition = false;
+                masterTrack.volume().set(targetVolume);
+            }
+            initStateSeen = true;
+            return;
         }
-    });
 
-    // Enable metronome after init so beat 1 is ready when the user first presses play
-    host.scheduleTask(function() {
-        isInitialized = true;
-        transport.isMetronomeEnabled().set(true);
-    }, null, 300);
+        // isPlaying = true
+        if (!initStateSeen) {
+            // Transport was already playing when script loaded — skip count-in
+            initStateSeen = true;
+            return;
+        }
+        startCountIn();
+    });
 
     host.println("BitwigPlaybackUtility initialized");
 }
@@ -69,23 +78,11 @@ function init() {
 function startCountIn() {
     isFading = true;
     isCounting = false;
-    waitingForFirstPosition = true; // startBeatPosition will be set on next position tick
+    waitingForFirstPosition = true;
 
-    // Metronome is already ON (enabled at init and on every stop),
-    // so beat 1 fires correctly without any latency from this script.
+    // Metronome is guaranteed ON (set whenever transport is stopped),
+    // so beat 1 fires without any script latency.
     masterTrack.volume().set(0.0);
-}
-
-function onTransportStopped() {
-    if (isCounting || isFading) {
-        // Aborted mid count-in: restore master immediately
-        isCounting = false;
-        isFading = false;
-        waitingForFirstPosition = false;
-        masterTrack.volume().set(targetVolume);
-    }
-    // Pre-enable metronome so it's ready (and beat 1 sounds) on next play
-    transport.isMetronomeEnabled().set(true);
 }
 
 // Called every engine cycle while counting; position is in quarter-note beats
@@ -112,7 +109,6 @@ function cancelFade() {
     isFading = false;
     waitingForFirstPosition = false;
     masterTrack.volume().set(targetVolume);
-    // Leave metronome state to onTransportStopped / exit
 }
 
 function flush() {}
