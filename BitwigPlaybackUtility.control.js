@@ -24,6 +24,7 @@ var metronomeEnabled = false;
 var isPlaying = false;
 var PREF_COUNT_IN;
 var PREF_COUNT_BEATS;
+var countInConfirmed = false;
 
 var COUNT_BEATS = 8.0;
 
@@ -119,6 +120,7 @@ function startCountIn() {
     isFading = true;
     isCounting = false;
     waitingForFirstPosition = true;
+    countInConfirmed = false;
     masterTrack.volume().set(0.0);
 }
 
@@ -126,6 +128,8 @@ function startCountIn() {
 function updateFade(position) {
     var elapsed = position - startBeatPosition;
     if (elapsed < 0) return;
+    if (elapsed < COUNT_BEATS * 0.5) countInConfirmed = true;
+    if (elapsed >= COUNT_BEATS && !countInConfirmed) return;
 
     if (elapsed >= COUNT_BEATS) {
         masterTrack.volume().set(targetVolume);
