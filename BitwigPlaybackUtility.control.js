@@ -43,10 +43,10 @@ function init() {
         }
     });
 
-    PREF_COUNT_BEATS = state.getNumberSetting("Count-in Beats", "Playback", 1, 16, 1, "beats", 8);
+    PREF_COUNT_BEATS = state.getNumberSetting("Count-in Beats", "Playback", 4, 32, 4, "beats", 8);
     PREF_COUNT_BEATS.markInterested();
-    PREF_COUNT_BEATS.addValueObserver(function(value) {
-        COUNT_BEATS = Math.round(value);
+    PREF_COUNT_BEATS.addRawValueObserver(function(value) {
+        COUNT_BEATS = value;
     });
 
     transport.isMetronomeEnabled().markInterested();
