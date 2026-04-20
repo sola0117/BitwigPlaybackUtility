@@ -31,7 +31,7 @@ function init() {
     masterTrack = host.createMasterTrack(0);
 
     var state = host.getDocumentState();
-    PREF_COUNT_IN = state.getEnumSetting("Count-in (8 beats)", "Playback", ["ON", "OFF"], "ON");
+    PREF_COUNT_IN = state.getEnumSetting("Count-in (8 beats)", "Playback", ["ON", "OFF"], "OFF");
     PREF_COUNT_IN.markInterested();
     PREF_COUNT_IN.addValueObserver(function(value) {
         countInEnabled = (value === "ON");
