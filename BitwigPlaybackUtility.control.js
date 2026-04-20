@@ -20,6 +20,7 @@ var startBeatPosition = 0.0;
 var waitingForFirstPosition = false;
 var initStateSeen = false; // true after the first isPlaying observer fire
 var countInEnabled = true;
+var metronomeEnabled = false;
 var PREF_COUNT_IN;
 
 var COUNT_BEATS = 8.0;
@@ -33,6 +34,14 @@ function init() {
     PREF_COUNT_IN.markInterested();
     PREF_COUNT_IN.addValueObserver(function(value) {
         countInEnabled = (value === "ON");
+        if (!countInEnabled && metronomeEnabled) {
+            transport.isMetronomeEnabled().set(false);
+        }
+    });
+
+    transport.isMetronomeEnabled().markInterested();
+    transport.isMetronomeEnabled().addValueObserver(function(en) {
+        metronomeEnabled = en;
     });
 
     // Remember the user's master volume when not fading
