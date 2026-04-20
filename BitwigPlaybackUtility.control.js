@@ -24,8 +24,6 @@ var metronomeEnabled = false;
 var isPlaying = false;
 var PREF_COUNT_IN;
 var PREF_COUNT_BEATS;
-var countInConfirmed = false;
-var countInTicks = 0;
 
 var COUNT_BEATS = 8.0;
 
@@ -69,13 +67,7 @@ function init() {
 
         if (waitingForFirstPosition) {
             waitingForFirstPosition = false;
-            var shiftedPos = position - COUNT_BEATS;
-            if (shiftedPos >= 0) {
-                transport.setPosition(shiftedPos);
-                startBeatPosition = shiftedPos;
-            } else {
-                startBeatPosition = position;
-            }
+            startBeatPosition = position;
             isCounting = true;
             host.println("Count-in: start=" + startBeatPosition.toFixed(3) + " end=" + (startBeatPosition + COUNT_BEATS).toFixed(3));
             return;
@@ -110,6 +102,10 @@ function init() {
             return;
         }
         if (countInEnabled) {
+            var shiftedPos = currentPosition - COUNT_BEATS;
+            if (shiftedPos >= 0) {
+                transport.setPosition(shiftedPos);
+            }
             startCountIn();
         }
     });
@@ -121,26 +117,12 @@ function startCountIn() {
     isFading = true;
     isCounting = false;
     waitingForFirstPosition = true;
-    countInConfirmed = false;
-    countInTicks = 0;
     masterTrack.volume().set(0.0);
 }
 
 // Called every engine cycle while counting; position is in quarter-note beats
 function updateFade(position) {
     var elapsed = position - startBeatPosition;
-    if (elapsed < 0) return;
-    countInTicks++;
-    if (elapsed < COUNT_BEATS * 0.5) countInConfirmed = true;
-    if (!countInConfirmed) {
-        // setPosition が効かない場合: 20ティック後に現在位置からフォールバック
-        if (countInTicks > 20) {
-            startBeatPosition = position;
-            countInConfirmed = true;
-            countInTicks = 0;
-        }
-        return;
-    }
 
     if (elapsed >= COUNT_BEATS) {
         masterTrack.volume().set(targetVolume);
@@ -150,7 +132,7 @@ function updateFade(position) {
         return;
     }
 
-    // Disable metronome halfway through beat 8 so beat 9 never fires
+    // Disable metronome halfway through last beat so next beat never fires
     if (elapsed >= COUNT_BEATS - 0.5) {
         transport.isMetronomeEnabled().set(false);
     }
