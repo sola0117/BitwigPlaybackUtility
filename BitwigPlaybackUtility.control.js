@@ -23,6 +23,8 @@ var countInEnabled = true;
 var metronomeEnabled = false;
 var isPlaying = false;
 var PREF_COUNT_IN;
+var PREF_COUNT_BEATS;
+var lastShiftedTarget = -1;
 
 var COUNT_BEATS = 8.0;
 
@@ -31,7 +33,7 @@ function init() {
     masterTrack = host.createMasterTrack(0);
 
     var state = host.getDocumentState();
-    PREF_COUNT_IN = state.getEnumSetting("Count-in (8 beats)", "Playback", ["ON", "OFF"], "OFF");
+    PREF_COUNT_IN = state.getEnumSetting("Count-in", "Playback", ["ON", "OFF"], "OFF");
     PREF_COUNT_IN.markInterested();
     PREF_COUNT_IN.addValueObserver(function(value) {
         countInEnabled = (value === "ON");
@@ -40,6 +42,12 @@ function init() {
         } else if (!countInEnabled && metronomeEnabled) {
             transport.isMetronomeEnabled().set(false);
         }
+    });
+
+    PREF_COUNT_BEATS = state.getNumberSetting("Count-in Beats", "Playback", 4, 32, 4, "beats", 8);
+    PREF_COUNT_BEATS.markInterested();
+    PREF_COUNT_BEATS.addRawValueObserver(function(value) {
+        COUNT_BEATS = value;
     });
 
     transport.isMetronomeEnabled().markInterested();
@@ -58,12 +66,22 @@ function init() {
     transport.playPosition().addValueObserver(function(position) {
         currentPosition = position;
 
-        // Capture the exact beat position on the first tick after play starts
+        // 停止中: ユーザーが位置をセットした瞬間にカウント分手前にオフセット
+        if (!isPlaying && countInEnabled && !isCounting && !isFading) {
+            var shiftedPos = position - COUNT_BEATS;
+            if (shiftedPos >= 0 && Math.abs(position - lastShiftedTarget) > 0.1) {
+                lastShiftedTarget = shiftedPos;
+                transport.setPosition(shiftedPos);
+                return;
+            }
+        }
+
         if (waitingForFirstPosition) {
             waitingForFirstPosition = false;
             startBeatPosition = position;
             isCounting = true;
             host.println("Count-in: start=" + startBeatPosition.toFixed(3) + " end=" + (startBeatPosition + COUNT_BEATS).toFixed(3));
+            return;
         }
 
         if (isCounting) {
@@ -106,9 +124,6 @@ function startCountIn() {
     isFading = true;
     isCounting = false;
     waitingForFirstPosition = true;
-
-    // Metronome is guaranteed ON (set whenever transport is stopped),
-    // so beat 1 fires without any script latency.
     masterTrack.volume().set(0.0);
 }
 
@@ -120,11 +135,11 @@ function updateFade(position) {
         masterTrack.volume().set(targetVolume);
         isCounting = false;
         isFading = false;
-        host.println("8-count complete at beat " + position.toFixed(3));
+        host.println(COUNT_BEATS + "-count complete at beat " + position.toFixed(3));
         return;
     }
 
-    // Disable metronome halfway through beat 8 so beat 9 never fires
+    // Disable metronome halfway through last beat so next beat never fires
     if (elapsed >= COUNT_BEATS - 0.5) {
         transport.isMetronomeEnabled().set(false);
     }
