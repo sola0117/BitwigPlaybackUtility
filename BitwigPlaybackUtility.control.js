@@ -17,12 +17,19 @@ var currentPosition = 0.0;
 var startBeatPosition = 0.0;
 var waitingForFirstPosition = false;
 var initStateSeen = false; // true after the first isPlaying observer fire
+var countInEnabled = true;
 
 var COUNT_BEATS = 8.0;
 
 function init() {
     transport = host.createTransport();
     masterTrack = host.createMasterTrack(0);
+
+    var prefs = host.getPreferences();
+    var countInSetting = prefs.getBooleanSetting("Count-in (8 beats)", "Playback", true);
+    countInSetting.addValueObserver(function(value) {
+        countInEnabled = value;
+    });
 
     // Remember the user's master volume when not fading
     masterTrack.volume().addValueObserver(function(value) {
@@ -69,7 +76,9 @@ function init() {
             initStateSeen = true;
             return;
         }
-        startCountIn();
+        if (countInEnabled) {
+            startCountIn();
+        }
     });
 
     host.println("BitwigPlaybackUtility initialized");
