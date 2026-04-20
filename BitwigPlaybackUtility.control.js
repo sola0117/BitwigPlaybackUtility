@@ -74,7 +74,7 @@ function init() {
         if (!isPlaying && countInEnabled && !isCounting && !isFading) {
             if (isRestoringPosition) {
                 // 復元先に到達したら抑制解除
-                if (Math.abs(position - startBeatPosition) < 0.5) {
+                if (Math.abs(position - startBeatPosition) <= 0.1) {
                     isRestoringPosition = false;
                 }
                 return;
