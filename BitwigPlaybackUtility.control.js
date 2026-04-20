@@ -18,7 +18,6 @@ var isFading = false;
 var currentPosition = 0.0;
 var startBeatPosition = 0.0;
 var waitingForFirstPosition = false;
-var initFired = false; // true after the initial-state observer fire
 var countInEnabled = true;
 var metronomeEnabled = false;
 var isPlaying = false;
@@ -104,15 +103,11 @@ function init() {
 
     transport.isPlaying().markInterested();
     transport.isPlaying().addValueObserver(function(playing) {
+        var wasPlaying = isPlaying;
         isPlaying = playing;
 
-        if (!initFired) {
-            // 最初の発火はロード時の初期状態通知 — ユーザー操作ではない
-            initFired = true;
-            if (!playing && countInEnabled) {
-                transport.isMetronomeEnabled().set(true);
-            }
-            // playing=trueで初期発火した場合（再生中にロード）は何もしない
+        if (playing === wasPlaying) {
+            // 初期発火（状態変化なし）— 無視
             return;
         }
 
