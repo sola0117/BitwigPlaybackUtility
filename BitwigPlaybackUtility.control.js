@@ -21,6 +21,7 @@ var waitingForFirstPosition = false;
 var initStateSeen = false; // true after the first isPlaying observer fire
 var countInEnabled = true;
 var metronomeEnabled = false;
+var isPlaying = false;
 var PREF_COUNT_IN;
 
 var COUNT_BEATS = 8.0;
@@ -34,7 +35,7 @@ function init() {
     PREF_COUNT_IN.markInterested();
     PREF_COUNT_IN.addValueObserver(function(value) {
         countInEnabled = (value === "ON");
-        if (countInEnabled && !metronomeEnabled) {
+        if (countInEnabled && !metronomeEnabled && !isPlaying) {
             transport.isMetronomeEnabled().set(true);
         } else if (!countInEnabled && metronomeEnabled) {
             transport.isMetronomeEnabled().set(false);
@@ -70,8 +71,9 @@ function init() {
         }
     });
 
-    transport.isPlaying().addValueObserver(function(isPlaying) {
-        if (!isPlaying) {
+    transport.isPlaying().addValueObserver(function(playing) {
+        isPlaying = playing;
+        if (!playing) {
             // Always keep metronome ON while stopped — fires immediately on init too
             transport.isMetronomeEnabled().set(true);
             if (initStateSeen && (isCounting || isFading)) {
@@ -85,7 +87,7 @@ function init() {
             return;
         }
 
-        // isPlaying = true
+        // playing = true
         if (!initStateSeen) {
             // Transport was already playing when script loaded — skip count-in
             initStateSeen = true;
