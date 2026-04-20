@@ -8,6 +8,8 @@ host.defineController(
     "Custom"
 );
 
+host.defineMidiPorts(0, 0);
+
 var transport;
 var masterTrack;
 var targetVolume = 0.795; // ~0 dB in Bitwig's normalized scale
