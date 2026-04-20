@@ -25,6 +25,7 @@ var isPlaying = false;
 var PREF_COUNT_IN;
 var PREF_COUNT_BEATS;
 var lastShiftedTarget = -1;
+var isRestoringPosition = false;
 
 var COUNT_BEATS = 8.0;
 
@@ -71,6 +72,13 @@ function init() {
 
         // 停止中: ユーザーが位置をセットした瞬間にカウント分手前にオフセット
         if (!isPlaying && countInEnabled && !isCounting && !isFading) {
+            if (isRestoringPosition) {
+                // 復元先に到達したら抑制解除
+                if (Math.abs(position - startBeatPosition) < 0.5) {
+                    isRestoringPosition = false;
+                }
+                return;
+            }
             var shiftedPos = position - COUNT_BEATS;
             if (shiftedPos >= 0 && Math.abs(position - lastShiftedTarget) > 0.1) {
                 lastShiftedTarget = shiftedPos;
@@ -106,7 +114,8 @@ function init() {
                 masterTrack.volume().set(targetVolume);
             }
             if (initStateSeen && countInEnabled && startBeatPosition > 0) {
-                // 再生開始位置（オフセット済み）に戻す
+                // 再生開始位置（オフセット済み）に戻す。復元中はオフセット抑制
+                isRestoringPosition = true;
                 lastShiftedTarget = startBeatPosition;
                 transport.setPosition(startBeatPosition);
             }
