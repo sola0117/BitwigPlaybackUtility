@@ -31,7 +31,7 @@ function init() {
     masterTrack = host.createMasterTrack(0);
 
     var state = host.getDocumentState();
-    PREF_COUNT_IN = state.getEnumSetting("Count-in (8 beats)", "Playback", ["ON", "OFF"], "ON");
+    PREF_COUNT_IN = state.getEnumSetting("Count-in (8 beats)", "Playback", ["ON", "OFF"], "OFF");
     PREF_COUNT_IN.markInterested();
     PREF_COUNT_IN.addValueObserver(function(value) {
         countInEnabled = (value === "ON");
@@ -74,8 +74,9 @@ function init() {
     transport.isPlaying().addValueObserver(function(playing) {
         isPlaying = playing;
         if (!playing) {
-            // Always keep metronome ON while stopped — fires immediately on init too
-            transport.isMetronomeEnabled().set(true);
+            if (countInEnabled) {
+                transport.isMetronomeEnabled().set(true);
+            }
             if (initStateSeen && (isCounting || isFading)) {
                 // Aborted mid count-in: restore master immediately
                 isCounting = false;
