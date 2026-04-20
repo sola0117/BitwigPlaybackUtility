@@ -10,29 +10,44 @@ host.defineController(
 
 var transport;
 var masterTrack;
-var currentBpm = 120.0;
 var targetVolume = 0.795; // ~0 dB in Bitwig's normalized scale
+var isCounting = false;
 var isFading = false;
-var taskCounter = 0;
+var currentPosition = 0.0;
+var startBeatPosition = 0.0;
+var waitingForFirstPosition = false;
 var isInitialized = false;
+
+var COUNT_BEATS = 8.0;
 
 function init() {
     transport = host.createTransport();
     masterTrack = host.createMasterTrack(0);
 
-    // Track live BPM (raw value = actual BPM)
-    transport.tempo().addRawValueObserver(function(bpm) {
-        currentBpm = bpm;
-    });
-
-    // Remember the user's intended master volume when not fading
+    // Remember the user's master volume when not fading
     masterTrack.volume().addValueObserver(function(value) {
         if (!isFading) {
             targetVolume = value;
         }
     });
 
-    // React to transport play/stop
+    // Driven by Bitwig's audio engine position — fires every engine cycle
+    transport.playPosition().addValueObserver(function(position) {
+        currentPosition = position;
+
+        // Capture the exact beat position on the first tick after play starts
+        if (waitingForFirstPosition) {
+            waitingForFirstPosition = false;
+            startBeatPosition = position;
+            isCounting = true;
+            host.println("Count-in: start=" + startBeatPosition.toFixed(3) + " end=" + (startBeatPosition + COUNT_BEATS).toFixed(3));
+        }
+
+        if (isCounting) {
+            updateFade(position);
+        }
+    });
+
     transport.isPlaying().addValueObserver(function(isPlaying) {
         if (!isInitialized) return;
         if (isPlaying) {
@@ -42,7 +57,6 @@ function init() {
         }
     });
 
-    // Ignore any initial observer fires during script load
     host.scheduleTask(function() {
         isInitialized = true;
     }, null, 300);
@@ -51,47 +65,37 @@ function init() {
 }
 
 function startCountIn() {
-    // Each call gets a unique ID; scheduled callbacks check this to detect cancellation
-    taskCounter++;
-    var myTaskId = taskCounter;
-
     isFading = true;
+    isCounting = false;
+    waitingForFirstPosition = true; // startBeatPosition will be set on next position tick
 
     transport.isMetronomeEnabled().set(true);
     masterTrack.volume().set(0.0);
+}
 
-    var beatMs = 60000.0 / currentBpm;
-    var totalMs = 8 * beatMs;
-    var STEPS = 40;
-    var vol = targetVolume;
+// Called every engine cycle while counting; position is in quarter-note beats
+function updateFade(position) {
+    var elapsed = position - startBeatPosition;
 
-    host.println("8-count intro started at " + Math.round(currentBpm) + " BPM (" + Math.round(totalMs) + " ms)");
-
-    // Smooth fade-in across 8 beats using a square-root curve
-    for (var i = 1; i <= STEPS; i++) {
-        (function(step) {
-            var delay = Math.round(totalMs * step / STEPS);
-            host.scheduleTask(function() {
-                if (!isFading || taskCounter !== myTaskId) return;
-                var t = step / STEPS;
-                masterTrack.volume().set(vol * Math.sqrt(t));
-            }, null, delay);
-        })(i);
+    if (elapsed >= COUNT_BEATS) {
+        transport.isMetronomeEnabled().set(false);
+        masterTrack.volume().set(targetVolume);
+        isCounting = false;
+        isFading = false;
+        host.println("8-count complete at beat " + position.toFixed(3));
+        return;
     }
 
-    // Exactly at beat 8: metronome off, master fully restored
-    host.scheduleTask(function() {
-        if (taskCounter !== myTaskId) return;
-        transport.isMetronomeEnabled().set(false);
-        masterTrack.volume().set(vol);
-        isFading = false;
-        host.println("8-count complete: metronome off, master restored");
-    }, null, Math.round(totalMs) + 5);
+    if (elapsed > 0) {
+        var progress = elapsed / COUNT_BEATS;
+        masterTrack.volume().set(targetVolume * Math.sqrt(progress));
+    }
 }
 
 function cancelFade() {
-    taskCounter++; // Invalidates any in-flight scheduled tasks
+    isCounting = false;
     isFading = false;
+    waitingForFirstPosition = false;
     masterTrack.volume().set(targetVolume);
     transport.isMetronomeEnabled().set(false);
 }
