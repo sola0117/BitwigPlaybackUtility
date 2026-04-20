@@ -114,8 +114,11 @@ function startCountIn() {
     isCounting = false;
     waitingForFirstPosition = true;
 
-    // Metronome is guaranteed ON (set whenever transport is stopped),
-    // so beat 1 fires without any script latency.
+    var shiftedPosition = currentPosition - COUNT_BEATS;
+    if (shiftedPosition >= 0) {
+        transport.setPosition(shiftedPosition);
+    }
+
     masterTrack.volume().set(0.0);
 }
 
