@@ -65,12 +65,18 @@ function init() {
     transport.playPosition().addValueObserver(function(position) {
         currentPosition = position;
 
-        // Capture the exact beat position on the first tick after play starts
         if (waitingForFirstPosition) {
             waitingForFirstPosition = false;
-            startBeatPosition = position;
+            var shiftedPos = position - COUNT_BEATS;
+            if (shiftedPos >= 0) {
+                transport.setPosition(shiftedPos);
+                startBeatPosition = shiftedPos;
+            } else {
+                startBeatPosition = position;
+            }
             isCounting = true;
             host.println("Count-in: start=" + startBeatPosition.toFixed(3) + " end=" + (startBeatPosition + COUNT_BEATS).toFixed(3));
+            return;
         }
 
         if (isCounting) {
@@ -113,18 +119,13 @@ function startCountIn() {
     isFading = true;
     isCounting = false;
     waitingForFirstPosition = true;
-
-    var shiftedPosition = currentPosition - COUNT_BEATS;
-    if (shiftedPosition >= 0) {
-        transport.setPosition(shiftedPosition);
-    }
-
     masterTrack.volume().set(0.0);
 }
 
 // Called every engine cycle while counting; position is in quarter-note beats
 function updateFade(position) {
     var elapsed = position - startBeatPosition;
+    if (elapsed < 0) return;
 
     if (elapsed >= COUNT_BEATS) {
         masterTrack.volume().set(targetVolume);
