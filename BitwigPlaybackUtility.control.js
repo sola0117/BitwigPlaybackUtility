@@ -53,12 +53,14 @@ function init() {
         if (isPlaying) {
             startCountIn();
         } else {
-            cancelFade();
+            onTransportStopped();
         }
     });
 
+    // Enable metronome after init so beat 1 is ready when the user first presses play
     host.scheduleTask(function() {
         isInitialized = true;
+        transport.isMetronomeEnabled().set(true);
     }, null, 300);
 
     host.println("BitwigPlaybackUtility initialized");
@@ -69,8 +71,21 @@ function startCountIn() {
     isCounting = false;
     waitingForFirstPosition = true; // startBeatPosition will be set on next position tick
 
-    transport.isMetronomeEnabled().set(true);
+    // Metronome is already ON (enabled at init and on every stop),
+    // so beat 1 fires correctly without any latency from this script.
     masterTrack.volume().set(0.0);
+}
+
+function onTransportStopped() {
+    if (isCounting || isFading) {
+        // Aborted mid count-in: restore master immediately
+        isCounting = false;
+        isFading = false;
+        waitingForFirstPosition = false;
+        masterTrack.volume().set(targetVolume);
+    }
+    // Pre-enable metronome so it's ready (and beat 1 sounds) on next play
+    transport.isMetronomeEnabled().set(true);
 }
 
 // Called every engine cycle while counting; position is in quarter-note beats
@@ -97,12 +112,13 @@ function cancelFade() {
     isFading = false;
     waitingForFirstPosition = false;
     masterTrack.volume().set(targetVolume);
-    transport.isMetronomeEnabled().set(false);
+    // Leave metronome state to onTransportStopped / exit
 }
 
 function flush() {}
 
 function exit() {
     cancelFade();
+    transport.isMetronomeEnabled().set(false);
     host.println("BitwigPlaybackUtility exited");
 }
