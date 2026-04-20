@@ -25,6 +25,7 @@ var isPlaying = false;
 var PREF_COUNT_IN;
 var PREF_COUNT_BEATS;
 var countInConfirmed = false;
+var countInTicks = 0;
 
 var COUNT_BEATS = 8.0;
 
@@ -121,6 +122,7 @@ function startCountIn() {
     isCounting = false;
     waitingForFirstPosition = true;
     countInConfirmed = false;
+    countInTicks = 0;
     masterTrack.volume().set(0.0);
 }
 
@@ -128,8 +130,17 @@ function startCountIn() {
 function updateFade(position) {
     var elapsed = position - startBeatPosition;
     if (elapsed < 0) return;
+    countInTicks++;
     if (elapsed < COUNT_BEATS * 0.5) countInConfirmed = true;
-    if (elapsed >= COUNT_BEATS && !countInConfirmed) return;
+    if (!countInConfirmed) {
+        // setPosition が効かない場合: 20ティック後に現在位置からフォールバック
+        if (countInTicks > 20) {
+            startBeatPosition = position;
+            countInConfirmed = true;
+            countInTicks = 0;
+        }
+        return;
+    }
 
     if (elapsed >= COUNT_BEATS) {
         masterTrack.volume().set(targetVolume);
