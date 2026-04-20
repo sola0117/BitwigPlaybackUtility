@@ -90,12 +90,16 @@ function updateFade(position) {
     var elapsed = position - startBeatPosition;
 
     if (elapsed >= COUNT_BEATS) {
-        transport.isMetronomeEnabled().set(false);
         masterTrack.volume().set(targetVolume);
         isCounting = false;
         isFading = false;
         host.println("8-count complete at beat " + position.toFixed(3));
         return;
+    }
+
+    // Disable metronome halfway through beat 8 so beat 9 never fires
+    if (elapsed >= COUNT_BEATS - 0.5) {
+        transport.isMetronomeEnabled().set(false);
     }
 
     if (elapsed > 0) {
