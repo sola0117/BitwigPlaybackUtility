@@ -105,6 +105,11 @@ function init() {
                 waitingForFirstPosition = false;
                 masterTrack.volume().set(targetVolume);
             }
+            if (initStateSeen && countInEnabled && startBeatPosition > 0) {
+                // 再生開始位置（オフセット済み）に戻す
+                lastShiftedTarget = startBeatPosition;
+                transport.setPosition(startBeatPosition);
+            }
             initStateSeen = true;
             return;
         }
