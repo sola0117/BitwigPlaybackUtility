@@ -34,7 +34,9 @@ function init() {
     PREF_COUNT_IN.markInterested();
     PREF_COUNT_IN.addValueObserver(function(value) {
         countInEnabled = (value === "ON");
-        if (!countInEnabled && metronomeEnabled) {
+        if (countInEnabled && !metronomeEnabled) {
+            transport.isMetronomeEnabled().set(true);
+        } else if (!countInEnabled && metronomeEnabled) {
             transport.isMetronomeEnabled().set(false);
         }
     });
