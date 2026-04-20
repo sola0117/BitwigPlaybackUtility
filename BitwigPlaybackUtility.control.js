@@ -74,8 +74,9 @@ function init() {
     transport.isPlaying().addValueObserver(function(playing) {
         isPlaying = playing;
         if (!playing) {
-            // Always keep metronome ON while stopped — fires immediately on init too
-            transport.isMetronomeEnabled().set(true);
+            if (countInEnabled) {
+                transport.isMetronomeEnabled().set(true);
+            }
             if (initStateSeen && (isCounting || isFading)) {
                 // Aborted mid count-in: restore master immediately
                 isCounting = false;
