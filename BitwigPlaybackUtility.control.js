@@ -25,8 +25,8 @@ function init() {
     transport = host.createTransport();
     masterTrack = host.createMasterTrack(0);
 
-    var prefs = host.getPreferences();
-    var countInSetting = prefs.getBooleanSetting("Count-in (8 beats)", "Playback", true);
+    var state = host.getDocumentState();
+    var countInSetting = state.getBooleanSetting("Count-in (8 beats)", "Playback", true);
     countInSetting.addValueObserver(function(value) {
         countInEnabled = value;
     });
