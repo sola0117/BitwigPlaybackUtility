@@ -18,7 +18,7 @@ var isFading = false;
 var currentPosition = 0.0;
 var startBeatPosition = 0.0;
 var waitingForFirstPosition = false;
-var initStateSeen = false; // true after the first isPlaying observer fire
+var initDone = false; // true after the first isPlaying observer fire
 var countInEnabled = true;
 var metronomeEnabled = false;
 var isPlaying = false;
@@ -104,33 +104,37 @@ function init() {
 
     transport.isPlaying().addValueObserver(function(playing) {
         isPlaying = playing;
+
+        if (!initDone) {
+            // 最初の発火はロード時の初期状態 — カウントインをスキップ
+            initDone = true;
+            if (!playing && countInEnabled) {
+                transport.isMetronomeEnabled().set(true);
+            }
+            return;
+        }
+
         if (!playing) {
             if (countInEnabled) {
                 transport.isMetronomeEnabled().set(true);
             }
-            if (initStateSeen && (isCounting || isFading)) {
+            if (isCounting || isFading) {
                 // Aborted mid count-in: restore master immediately
                 isCounting = false;
                 isFading = false;
                 waitingForFirstPosition = false;
                 masterTrack.volume().set(targetVolume);
             }
-            if (initStateSeen && countInEnabled && intendedStartPosition >= 0) {
+            if (countInEnabled && intendedStartPosition >= 0) {
                 // 再生開始位置（オフセット済み）に戻す。復元中はオフセット抑制
                 isRestoringPosition = true;
                 lastShiftedTarget = intendedStartPosition;
                 transport.setPosition(intendedStartPosition);
             }
-            initStateSeen = true;
             return;
         }
 
-        // playing = true
-        if (!initStateSeen) {
-            // Transport was already playing when script loaded — skip count-in
-            initStateSeen = true;
-            return;
-        }
+        // playing = true: ユーザーが再生を開始
         if (countInEnabled) {
             startCountIn();
         }
