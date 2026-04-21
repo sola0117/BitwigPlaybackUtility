@@ -10,33 +10,46 @@ host.defineController(
 
 host.defineMidiPorts(0, 0);
 
+// API objects
 var transport;
 var masterTrack;
-var targetVolume = 0.795; // ~0 dB in Bitwig's normalized scale
-var pendingVolume = -1;   // volume to apply on next flush(); -1 = no pending change
-var silenceVolume = false; // true = apply 0.0 on next flush() with priority
-var isCounting = false;
-var isFading = false;
-var currentPosition = 0.0;
-var startBeatPosition = 0.0;
-var waitingForFirstPosition = false;
-var countInEnabled = true;
-var metronomeEnabled = false;
-var isPlaying = false;
+
+// Document state settings
 var PREF_COUNT_IN;
 var PREF_COUNT_BEATS;
+
+// Playback preferences (mirrored from document state)
+var countInEnabled = true;
+var countBeats = 8;
+
+// Transport state
+var isPlaying = false;
+var isPlayingReady = false; // skips initial observer fire
+
+// Volume state
+var targetVolume = 0.795;  // ~0 dB in Bitwig's normalized scale; tracks user's master volume
+var pendingVolume = null;  // volume to apply on next flush(); null = no pending change
+var silenceVolume = false; // if true, apply 0.0 on next flush() with priority
+
+// Metronome state
+var metronomeEnabled = false;
+
+// Count-in state machine
+var COUNT_IN = { IDLE: 0, WAITING: 1, COUNTING: 2 };
+var countInState = COUNT_IN.IDLE;
+var startBeatPosition = 0.0;
+
+// Position tracking for count-in pre-roll offset
 var lastShiftedTarget = -1;
 var intendedStartPosition = -1;
 var isRestoringPosition = false;
-var isPlayingReady = false;
-
-var COUNT_BEATS = 8.0;
 
 function init() {
     transport = host.createTransport();
     masterTrack = host.createMasterTrack(0);
 
     var state = host.getDocumentState();
+
     PREF_COUNT_IN = state.getEnumSetting("Count-in", "Playback", ["ON", "OFF"], "OFF");
     PREF_COUNT_IN.markInterested();
     PREF_COUNT_IN.addValueObserver(function(value) {
@@ -51,57 +64,40 @@ function init() {
     PREF_COUNT_BEATS = state.getEnumSetting("Count-in Beats", "Playback", ["4", "8", "16", "32"], "8");
     PREF_COUNT_BEATS.markInterested();
     PREF_COUNT_BEATS.addValueObserver(function(value) {
-        COUNT_BEATS = parseInt(value, 10);
+        countBeats = parseInt(value, 10);
     });
 
     transport.isMetronomeEnabled().markInterested();
     transport.isMetronomeEnabled().addValueObserver(function(en) {
         var wasEnabled = metronomeEnabled;
         metronomeEnabled = en;
-        // ユーザーがON→OFFに切り替えた時のみカウントインをOFFにする（初期発火は除外）
+        // Only turn count-in off when the user explicitly disables the metronome (not on initial fire)
         if (!en && wasEnabled && !isPlaying && countInEnabled) {
             PREF_COUNT_IN.set("OFF");
         }
     });
 
-    // Remember the user's master volume when not fading
     masterTrack.volume().markInterested();
     masterTrack.volume().addValueObserver(function(value) {
-        if (!isFading) {
+        if (countInState === COUNT_IN.IDLE) {
             targetVolume = value;
         }
     });
 
-    // Driven by Bitwig's audio engine position — fires every engine cycle
+    // Fires every audio engine cycle
     transport.playPosition().addValueObserver(function(position) {
-        currentPosition = position;
-
-        // 停止中: ユーザーが位置をセットした瞬間にカウント分手前にオフセット
-        if (!isPlaying && countInEnabled && !isCounting && !isFading) {
-            if (isRestoringPosition) {
-                // 復元先に到達したら抑制解除
-                if (Math.abs(position - intendedStartPosition) <= 0.1) {
-                    isRestoringPosition = false;
-                }
-                return;
-            }
-            var shiftedPos = position - COUNT_BEATS;
-            if (shiftedPos >= 0 && Math.abs(position - lastShiftedTarget) > 0.1) {
-                intendedStartPosition = shiftedPos;
-                lastShiftedTarget = shiftedPos;
-                transport.setPosition(shiftedPos);
-                return;
-            }
-        }
-
-        if (waitingForFirstPosition) {
-            waitingForFirstPosition = false;
-            startBeatPosition = position;
-            isCounting = true;
+        if (!isPlaying && countInEnabled && countInState === COUNT_IN.IDLE) {
+            handleStoppedPosition(position);
             return;
         }
 
-        if (isCounting) {
+        if (countInState === COUNT_IN.WAITING) {
+            startBeatPosition = position;
+            countInState = COUNT_IN.COUNTING;
+            return;
+        }
+
+        if (countInState === COUNT_IN.COUNTING) {
             updateFade(position);
         }
     });
@@ -116,26 +112,10 @@ function init() {
         }
 
         if (!playing) {
-            if (countInEnabled) {
-                transport.isMetronomeEnabled().set(true);
-            }
-            if (isCounting || isFading) {
-                // Aborted mid count-in: restore master immediately
-                isCounting = false;
-                isFading = false;
-                waitingForFirstPosition = false;
-                pendingVolume = targetVolume;
-            }
-            if (countInEnabled && intendedStartPosition >= 0) {
-                // 再生開始位置（オフセット済み）に戻す。復元中はオフセット抑制
-                isRestoringPosition = true;
-                lastShiftedTarget = intendedStartPosition;
-                transport.setPosition(intendedStartPosition);
-            }
+            handleStop();
             return;
         }
 
-        // playing = true: ユーザーが再生を開始
         if (countInEnabled) {
             startCountIn();
         }
@@ -144,57 +124,77 @@ function init() {
     host.println("BitwigPlaybackUtility initialized");
 }
 
+function handleStoppedPosition(position) {
+    if (isRestoringPosition) {
+        if (Math.abs(position - intendedStartPosition) <= 0.1) {
+            isRestoringPosition = false;
+        }
+        return;
+    }
+    var shiftedPos = position - countBeats;
+    if (shiftedPos >= 0 && Math.abs(position - lastShiftedTarget) > 0.1) {
+        intendedStartPosition = shiftedPos;
+        lastShiftedTarget = shiftedPos;
+        transport.setPosition(shiftedPos);
+    }
+}
+
+function handleStop() {
+    if (countInEnabled) {
+        transport.isMetronomeEnabled().set(true);
+    }
+    if (countInState !== COUNT_IN.IDLE) {
+        countInState = COUNT_IN.IDLE;
+        pendingVolume = targetVolume;
+    }
+    if (countInEnabled && intendedStartPosition >= 0) {
+        isRestoringPosition = true;
+        lastShiftedTarget = intendedStartPosition;
+        transport.setPosition(intendedStartPosition);
+    }
+}
+
 function startCountIn() {
-    isFading = true;
-    isCounting = false;
-    waitingForFirstPosition = true;
-    silenceVolume = true;  // flush()で0.0を優先適用。updateFadeに上書きされない
-    pendingVolume = -1;
+    countInState = COUNT_IN.WAITING;
+    silenceVolume = true;  // flush() applies 0.0 before updateFade() can overwrite pendingVolume
+    pendingVolume = null;
 }
 
 // Called every engine cycle while counting; position is in quarter-note beats
 function updateFade(position) {
     var elapsed = position - startBeatPosition;
 
-    if (elapsed >= COUNT_BEATS) {
+    if (elapsed >= countBeats) {
         pendingVolume = targetVolume;
-        isCounting = false;
-        isFading = false;
+        countInState = COUNT_IN.IDLE;
         return;
     }
 
-    // Disable metronome halfway through last beat so next beat never fires
-    if (elapsed >= COUNT_BEATS - 0.5) {
+    // Disable metronome just before the last beat so it never fires after count-in ends
+    if (elapsed >= countBeats - 0.5) {
         transport.isMetronomeEnabled().set(false);
     }
 
     if (elapsed > 0) {
-        var progress = elapsed / COUNT_BEATS;
-        pendingVolume = targetVolume * Math.sqrt(progress);
+        pendingVolume = targetVolume * Math.sqrt(elapsed / countBeats);
     }
 }
 
-function cancelFade() {
-    isCounting = false;
-    isFading = false;
-    waitingForFirstPosition = false;
-    pendingVolume = targetVolume;
-}
-
 // flush() is called once per UI frame — apply pending volume here to avoid
-// Bitwig batching multiple set() calls from playPosition and discarding all but the last
+// Bitwig batching multiple setImmediately() calls from playPosition and discarding all but the last
 function flush() {
     if (silenceVolume) {
         masterTrack.volume().setImmediately(0.0);
         silenceVolume = false;
-    } else if (pendingVolume >= 0) {
+    } else if (pendingVolume !== null) {
         masterTrack.volume().setImmediately(pendingVolume);
-        pendingVolume = -1;
+        pendingVolume = null;
     }
 }
 
 function exit() {
-    cancelFade();
+    countInState = COUNT_IN.IDLE;
+    silenceVolume = false;
     masterTrack.volume().setImmediately(targetVolume);
     transport.isMetronomeEnabled().set(false);
     host.println("BitwigPlaybackUtility exited");
