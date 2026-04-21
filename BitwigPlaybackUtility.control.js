@@ -13,12 +13,13 @@ host.defineMidiPorts(0, 0);
 var transport;
 var masterTrack;
 var targetVolume = 0.795; // ~0 dB in Bitwig's normalized scale
+var pendingVolume = -1;   // volume to apply on next flush(); -1 = no pending change
+var silenceVolume = false; // true = apply 0.0 on next flush() with priority
 var isCounting = false;
 var isFading = false;
 var currentPosition = 0.0;
 var startBeatPosition = 0.0;
 var waitingForFirstPosition = false;
-var initStateSeen = false; // true after the first isPlaying observer fire
 var countInEnabled = true;
 var metronomeEnabled = false;
 var isPlaying = false;
@@ -27,6 +28,7 @@ var PREF_COUNT_BEATS;
 var lastShiftedTarget = -1;
 var intendedStartPosition = -1;
 var isRestoringPosition = false;
+var isPlayingReady = false;
 
 var COUNT_BEATS = 8.0;
 
@@ -54,13 +56,16 @@ function init() {
 
     transport.isMetronomeEnabled().markInterested();
     transport.isMetronomeEnabled().addValueObserver(function(en) {
+        var wasEnabled = metronomeEnabled;
         metronomeEnabled = en;
-        if (!en && !isPlaying && countInEnabled) {
+        // ユーザーがON→OFFに切り替えた時のみカウントインをOFFにする（初期発火は除外）
+        if (!en && wasEnabled && !isPlaying && countInEnabled) {
             PREF_COUNT_IN.set("OFF");
         }
     });
 
     // Remember the user's master volume when not fading
+    masterTrack.volume().markInterested();
     masterTrack.volume().addValueObserver(function(value) {
         if (!isFading) {
             targetVolume = value;
@@ -93,7 +98,6 @@ function init() {
             waitingForFirstPosition = false;
             startBeatPosition = position;
             isCounting = true;
-            host.println("Count-in: start=" + startBeatPosition.toFixed(3) + " end=" + (startBeatPosition + COUNT_BEATS).toFixed(3));
             return;
         }
 
@@ -102,35 +106,36 @@ function init() {
         }
     });
 
+    transport.isPlaying().markInterested();
     transport.isPlaying().addValueObserver(function(playing) {
         isPlaying = playing;
+
+        if (!isPlayingReady) {
+            isPlayingReady = true;
+            return;
+        }
+
         if (!playing) {
             if (countInEnabled) {
                 transport.isMetronomeEnabled().set(true);
             }
-            if (initStateSeen && (isCounting || isFading)) {
+            if (isCounting || isFading) {
                 // Aborted mid count-in: restore master immediately
                 isCounting = false;
                 isFading = false;
                 waitingForFirstPosition = false;
-                masterTrack.volume().set(targetVolume);
+                pendingVolume = targetVolume;
             }
-            if (initStateSeen && countInEnabled && intendedStartPosition >= 0) {
+            if (countInEnabled && intendedStartPosition >= 0) {
                 // 再生開始位置（オフセット済み）に戻す。復元中はオフセット抑制
                 isRestoringPosition = true;
                 lastShiftedTarget = intendedStartPosition;
                 transport.setPosition(intendedStartPosition);
             }
-            initStateSeen = true;
             return;
         }
 
-        // playing = true
-        if (!initStateSeen) {
-            // Transport was already playing when script loaded — skip count-in
-            initStateSeen = true;
-            return;
-        }
+        // playing = true: ユーザーが再生を開始
         if (countInEnabled) {
             startCountIn();
         }
@@ -143,7 +148,8 @@ function startCountIn() {
     isFading = true;
     isCounting = false;
     waitingForFirstPosition = true;
-    masterTrack.volume().set(0.0);
+    silenceVolume = true;  // flush()で0.0を優先適用。updateFadeに上書きされない
+    pendingVolume = -1;
 }
 
 // Called every engine cycle while counting; position is in quarter-note beats
@@ -151,10 +157,9 @@ function updateFade(position) {
     var elapsed = position - startBeatPosition;
 
     if (elapsed >= COUNT_BEATS) {
-        masterTrack.volume().set(targetVolume);
+        pendingVolume = targetVolume;
         isCounting = false;
         isFading = false;
-        host.println(COUNT_BEATS + "-count complete at beat " + position.toFixed(3));
         return;
     }
 
@@ -165,7 +170,7 @@ function updateFade(position) {
 
     if (elapsed > 0) {
         var progress = elapsed / COUNT_BEATS;
-        masterTrack.volume().set(targetVolume * Math.sqrt(progress));
+        pendingVolume = targetVolume * Math.sqrt(progress);
     }
 }
 
@@ -173,13 +178,24 @@ function cancelFade() {
     isCounting = false;
     isFading = false;
     waitingForFirstPosition = false;
-    masterTrack.volume().set(targetVolume);
+    pendingVolume = targetVolume;
 }
 
-function flush() {}
+// flush() is called once per UI frame — apply pending volume here to avoid
+// Bitwig batching multiple set() calls from playPosition and discarding all but the last
+function flush() {
+    if (silenceVolume) {
+        masterTrack.volume().setImmediately(0.0);
+        silenceVolume = false;
+    } else if (pendingVolume >= 0) {
+        masterTrack.volume().setImmediately(pendingVolume);
+        pendingVolume = -1;
+    }
+}
 
 function exit() {
     cancelFade();
+    masterTrack.volume().setImmediately(targetVolume);
     transport.isMetronomeEnabled().set(false);
     host.println("BitwigPlaybackUtility exited");
 }
