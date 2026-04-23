@@ -18,6 +18,7 @@ var masterTrack;
 var PREF_COUNT_IN;
 var PREF_COUNT_BEATS;
 var PREF_COUNT_IN_VOLUME;
+var PREF_FADE_MS;
 
 // Playback preferences (mirrored from document state)
 var countInEnabled = true;
@@ -26,7 +27,8 @@ var countBeats = 8;
 // Transport state
 var isPlaying = false;
 var isPlayingReady = false; // skips initial observer fire
-var tempo = 120.0;          // current BPM; used to convert 300ms to beats
+var tempo = 120.0;          // current BPM; used to convert fade duration to beats
+var fadeMs = 100.0;         // fade duration in ms
 
 // Volume state
 var targetVolume = 0.795;    // ~0 dB in Bitwig's normalized scale; tracks user's master volume
@@ -74,6 +76,12 @@ function init() {
     PREF_COUNT_IN_VOLUME.addValueObserver(function(value) {
         // Bitwig volume uses a cube-root response: normalized = 10^(dB/60) * 0.795
         countInVolume = (value === "-∞dB") ? 0.0 : Math.pow(10, parseInt(value, 10) / 60) * 0.795;
+    });
+
+    PREF_FADE_MS = state.getNumberSetting("Fade Duration", "Playback", 10, 2000, 1, "ms", 100);
+    PREF_FADE_MS.markInterested();
+    PREF_FADE_MS.addRawValueObserver(function(value) {
+        fadeMs = value;
     });
 
     transport.tempo().markInterested();
@@ -188,8 +196,8 @@ function updateFade(position) {
         transport.isMetronomeEnabled().set(false);
     }
 
-    // Fade from countInVolume to targetVolume over the 150ms before count-in ends
-    var fadeBeats = (0.15 * tempo) / 60.0;
+    // Fade from countInVolume to targetVolume over fadeMs before count-in ends
+    var fadeBeats = fadeMs * tempo / 60000.0;
     if (elapsed >= countBeats - fadeBeats) {
         var progress = Math.sqrt((elapsed - (countBeats - fadeBeats)) / fadeBeats);
         pendingVolume = countInVolume + (targetVolume - countInVolume) * progress;
