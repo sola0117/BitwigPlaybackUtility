@@ -30,7 +30,7 @@ var tempo = 120.0;          // current BPM; used to convert 300ms to beats
 
 // Volume state
 var targetVolume = 0.795;    // ~0 dB in Bitwig's normalized scale; tracks user's master volume
-var countInVolume = Math.pow(10, -10 / 60) * 0.795; // volume during count-in; default -10 dB
+var countInVolume = Math.pow(10, -24 / 60) * 0.795; // volume during count-in; default -24 dB
 var pendingVolume = null;    // volume to apply on next flush(); null = no pending change
 
 // Metronome state
@@ -69,11 +69,11 @@ function init() {
         countBeats = parseInt(value, 10);
     });
 
-    PREF_COUNT_IN_VOLUME = state.getEnumSetting("Count-in Volume", "Playback", ["0 dB", "-3 dB", "-6 dB", "-10 dB", "-14 dB", "-18 dB"], "-10 dB");
+    PREF_COUNT_IN_VOLUME = state.getEnumSetting("Count-in Volume", "Playback", ["0dB", "-18dB", "-24dB", "-32dB", "-∞dB"], "-24dB");
     PREF_COUNT_IN_VOLUME.markInterested();
     PREF_COUNT_IN_VOLUME.addValueObserver(function(value) {
         // Bitwig volume uses a cube-root response: normalized = 10^(dB/60) * 0.795
-        countInVolume = Math.pow(10, parseInt(value, 10) / 60) * 0.795;
+        countInVolume = (value === "-∞dB") ? 0.0 : Math.pow(10, parseInt(value, 10) / 60) * 0.795;
     });
 
     transport.tempo().markInterested();
