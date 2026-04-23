@@ -175,8 +175,9 @@ function updateFade(position) {
         transport.isMetronomeEnabled().set(false);
     }
 
-    if (elapsed > 0) {
-        pendingVolume = targetVolume * Math.sqrt(elapsed / countBeats);
+    // Fade in only during the last beat (elapsed: countBeats-1 → countBeats)
+    if (elapsed >= countBeats - 1) {
+        pendingVolume = targetVolume * Math.sqrt(elapsed - (countBeats - 1));
     }
 }
 
