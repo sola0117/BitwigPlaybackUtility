@@ -188,8 +188,8 @@ function updateFade(position) {
         transport.isMetronomeEnabled().set(false);
     }
 
-    // Fade from countInVolume to targetVolume over the 300ms before count-in ends
-    var fadeBeats = (0.3 * tempo) / 60.0;
+    // Fade from countInVolume to targetVolume over the 150ms before count-in ends
+    var fadeBeats = (0.15 * tempo) / 60.0;
     if (elapsed >= countBeats - fadeBeats) {
         var progress = Math.sqrt((elapsed - (countBeats - fadeBeats)) / fadeBeats);
         pendingVolume = countInVolume + (targetVolume - countInVolume) * progress;
