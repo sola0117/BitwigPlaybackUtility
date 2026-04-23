@@ -17,6 +17,7 @@ var masterTrack;
 // Document state settings
 var PREF_COUNT_IN;
 var PREF_COUNT_BEATS;
+var PREF_COUNT_IN_VOLUME;
 
 // Playback preferences (mirrored from document state)
 var countInEnabled = true;
@@ -27,9 +28,9 @@ var isPlaying = false;
 var isPlayingReady = false; // skips initial observer fire
 
 // Volume state
-var targetVolume = 0.795;  // ~0 dB in Bitwig's normalized scale; tracks user's master volume
-var pendingVolume = null;  // volume to apply on next flush(); null = no pending change
-var silenceVolume = false; // if true, apply 0.0 on next flush() with priority
+var targetVolume = 0.795;    // ~0 dB in Bitwig's normalized scale; tracks user's master volume
+var countInVolume = Math.pow(10, -10 / 60) * 0.795; // volume during count-in; default -10 dB
+var pendingVolume = null;    // volume to apply on next flush(); null = no pending change
 
 // Metronome state
 var metronomeEnabled = false;
@@ -65,6 +66,13 @@ function init() {
     PREF_COUNT_BEATS.markInterested();
     PREF_COUNT_BEATS.addValueObserver(function(value) {
         countBeats = parseInt(value, 10);
+    });
+
+    PREF_COUNT_IN_VOLUME = state.getEnumSetting("Count-in Volume", "Playback", ["0 dB", "-3 dB", "-6 dB", "-10 dB", "-14 dB", "-18 dB"], "-10 dB");
+    PREF_COUNT_IN_VOLUME.markInterested();
+    PREF_COUNT_IN_VOLUME.addValueObserver(function(value) {
+        // Bitwig volume uses a cube-root response: normalized = 10^(dB/60) * 0.795
+        countInVolume = Math.pow(10, parseInt(value, 10) / 60) * 0.795;
     });
 
     transport.isMetronomeEnabled().markInterested();
@@ -156,8 +164,7 @@ function handleStop() {
 
 function startCountIn() {
     countInState = COUNT_IN.WAITING;
-    silenceVolume = true;  // flush() applies 0.0 before updateFade() can overwrite pendingVolume
-    pendingVolume = null;
+    pendingVolume = countInVolume;
 }
 
 // Called every engine cycle while counting; position is in quarter-note beats
@@ -175,19 +182,17 @@ function updateFade(position) {
         transport.isMetronomeEnabled().set(false);
     }
 
-    // Fade in only during the last beat (elapsed: countBeats-1 → countBeats)
+    // Fade from countInVolume to targetVolume during the last beat (elapsed: countBeats-1 → countBeats)
     if (elapsed >= countBeats - 1) {
-        pendingVolume = targetVolume * Math.sqrt(elapsed - (countBeats - 1));
+        var progress = Math.sqrt(elapsed - (countBeats - 1));
+        pendingVolume = countInVolume + (targetVolume - countInVolume) * progress;
     }
 }
 
 // flush() is called once per UI frame — apply pending volume here to avoid
 // Bitwig batching multiple setImmediately() calls from playPosition and discarding all but the last
 function flush() {
-    if (silenceVolume) {
-        masterTrack.volume().setImmediately(0.0);
-        silenceVolume = false;
-    } else if (pendingVolume !== null) {
+    if (pendingVolume !== null) {
         masterTrack.volume().setImmediately(pendingVolume);
         pendingVolume = null;
     }
@@ -195,7 +200,6 @@ function flush() {
 
 function exit() {
     countInState = COUNT_IN.IDLE;
-    silenceVolume = false;
     masterTrack.volume().setImmediately(targetVolume);
     transport.isMetronomeEnabled().set(false);
     host.println("BitwigPlaybackUtility exited");
